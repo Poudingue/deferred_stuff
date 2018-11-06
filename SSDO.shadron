@@ -1,0 +1,5 @@
+parameter int nb_sample = 64 : logrange(8, 256);
+parameter float radius  = 0.2 : range(0, 1);
+parameter float γ = 2.2 : range(1, 3);
+
+image skysphere = file("skysphere.png") : full_range();
