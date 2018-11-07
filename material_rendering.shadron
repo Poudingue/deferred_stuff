@@ -144,9 +144,7 @@ glsl float blinn_phong(vec2 position){
 	// Average of viewer and light direction
 	vec3 h = normalize(l + v);
 
-	float shininess = .5/(σ*σ) -.5;
-	float multiplier = 2.5*(IOR-1)*pow(1+σ,-10);
-
+	float shininess = 2/(σ*σ) - 2;
 	// 4 times the phong shininess
 	return multiplier*pow(max(0, dot(h, n)), 4 * shininess);
 
