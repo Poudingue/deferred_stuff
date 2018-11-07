@@ -30,7 +30,7 @@ return vec3(
 }
 
 
-glsl vec3 sphere_normals(vec2 position){
+glsl vec3 get_normals(vec2 position){
     // nx and ny between -1 and 1, nz just follows trigonometry
     vec2 nxny = 2 * position - 1.;
 	float len_nxny = length(nxny);
@@ -42,18 +42,24 @@ glsl vec3 sphere_normals(vec2 position){
     return vec3(nxny, nz);
 }
 
-// image sphere_normals_visualisation = glsl(sphere_normals, vec2(500, 500));
+glsl vec3 get_albedo(vec2 position){
+    vec2 nxny = 2 * position - 1.;
+	float len_nxny = length(nxny);
+	if (len_nxny > 1){
+		return vec3(0, 0, 0);
+	}else{
+		return pow(diff_color, vec3(1/γ_screen));
+	}
+}
+
+// image get_normals_visualisation = glsl(get_normals, vec2(500, 500));
 
 /*
 Different models for diffuse
 */
 
-glsl float lambert(vec2 position){
+glsl float lambert(vec3 n){
 	// normal of material
-	vec3 n = normalize(sphere_normals(position));
-	if (n.b < 0){
-		return 0.;
-	}
     // Light source direction
     vec3 l = normalize(light_dir());
     return max(0., dot(l, n));
@@ -61,7 +67,7 @@ glsl float lambert(vec2 position){
 
 glsl float oren_nayar(vec2 position){
 	// normal of material
-	vec3 n = normalize(sphere_normals(position));
+	vec3 n = normalize(get_normals(position));
 	if (n.b < 0){
 		return 0.;
 	}
@@ -100,7 +106,7 @@ Different models for specular
 
 glsl float phong(vec2 position){
 	// normal of material
-	vec3 n = normalize(sphere_normals(position));
+	vec3 n = normalize(get_normals(position));
 	if (n.b < 0){
 		return 0.;
 	}
@@ -122,7 +128,7 @@ glsl float phong(vec2 position){
 
 glsl float blinn_phong(vec2 position){
 	// normal of material
-	vec3 n = normalize(sphere_normals(position));
+	vec3 n = normalize(get_normals(position));
 	if (n.b < 0){
 		return 0.;
 	}
@@ -150,7 +156,7 @@ glsl float blinn_phong(vec2 position){
 // the y component is for light which will be used by the diffuse
 glsl vec2 cook_torrance(vec2 position){
 	// normal of material
-	vec3 n = normalize(sphere_normals(position));
+	vec3 n = normalize(get_normals(position));
 	if (n.b < 0){
 		return vec2(0, 1);
 	}
@@ -215,38 +221,50 @@ Various mixes of specular and diffuse
 */
 
 glsl vec3 lambert_phong(vec2 position){
-	float lambert = lambert(position);
+	vec3 n = normalize(get_normals(position));
+	if (n.b < 0){
+		return vec3(0.);
+	}
+	float lambert = lambert(n);
 	float phong   =   phong(position);
-	return pow(light_color * (lambert * diff_color + phong), vec3(1/γ_screen));
+	return pow(light_color * (lambert * get_albedo(position) + phong), vec3(1/γ_screen));
 }
 
 
 glsl vec3 lambert_blinn_phong(vec2 position){
-	float lambert     =     lambert(position);
+	vec3 n = normalize(get_normals(position));
+	if (n.b < 0){
+		return vec3(0.);
+	}
+	float lambert = lambert(n);
 	float blinn_phong = blinn_phong(position);
-	return pow(light_color * (lambert * diff_color + blinn_phong), vec3(1/γ_screen));
+	return pow(light_color * (lambert * get_albedo(position) + blinn_phong), vec3(1/γ_screen));
 }
 
 
 glsl vec3 lambert_cook_torrance(vec2 position){
-	float lambert       =       lambert(position);
+	vec3 n = normalize(get_normals(position));
+	if (n.b < 0){
+		return vec3(0.);
+	}
+	float lambert = lambert(n);
 	vec2  cook_torrance = cook_torrance(position);
 	lambert *= cook_torrance.y;
-	return pow(light_color * (lambert * diff_color + cook_torrance.x), vec3(1/γ_screen));
+	return pow(light_color * (lambert * get_albedo(position) + cook_torrance.x), vec3(1/γ_screen));
 }
 
 
 glsl vec3 oren_nayar_phong(vec2 position){
 	float oren_nayar  =  oren_nayar(position);
 	float phong       =       phong(position);
-	return pow(light_color * (oren_nayar * diff_color + phong), vec3(1/γ_screen));
+	return pow(light_color * (oren_nayar * get_albedo(position) + phong), vec3(1/γ_screen));
 }
 
 
 glsl vec3 oren_nayar_blinn_phong(vec2 position){
 	float oren_nayar  =  oren_nayar(position);
 	float blinn_phong = blinn_phong(position);
-	return pow(light_color * (oren_nayar * diff_color + blinn_phong), vec3(1/γ_screen));
+	return pow(light_color * (oren_nayar * get_albedo(position) + blinn_phong), vec3(1/γ_screen));
 }
 
 
@@ -254,7 +272,7 @@ glsl vec3 oren_nayar_cook_torrance(vec2 position){
 	float oren_nayar    =    oren_nayar(position);
 	vec2  cook_torrance = cook_torrance(position);
 	oren_nayar *= cook_torrance.y;
-	return pow(light_color * (oren_nayar * diff_color + cook_torrance.x), vec3(1/γ_screen));
+	return pow(light_color * (oren_nayar * get_albedo(position) + cook_torrance.x), vec3(1/γ_screen));
 }
 
 
