@@ -5,8 +5,8 @@
 parameter float light_latitude  =  45 : range(-90,  90);
 parameter float light_longitude = 45 : range(  0, 360);
 parameter vec3 diff_color = vec3( .8, .0, .0) : color();
-parameter vec3 ligt_color = vec3(1. ,1. ,1. ) : color();
-parameter float σ = .1 : range(0, 1); //Roughness
+parameter vec3 light_color = vec3(1. ,1. ,1. ) : color();
+parameter float σ = .1 : range(0.001, 1); //Roughness
 
 // Default value is Water at 20°C
 // Rare to have materials with an IOR above 3. Diamond is at 2.418
@@ -167,7 +167,7 @@ glsl vec2 cook_torrance(vec2 position){
 	float VdotH = dot(v, h);
 
 	if(LdotN < 0){
-		return vec2(0.);
+		return vec2(0, 1);
 	}
 
 	//Precalculations for Beckmann
@@ -196,7 +196,8 @@ glsl vec2 cook_torrance(vec2 position){
 
 	// Geometric attenuation term.
 	// Can probably be simplified a lot, only difference being VdotN or LdotN
-	float G = min(1,
+	float G = min(
+		1,
 		min(
 			2 * HdotN * VdotN / VdotH,
 			2 * HdotN * LdotN / VdotH
@@ -216,48 +217,44 @@ Various mixes of specular and diffuse
 glsl vec3 lambert_phong(vec2 position){
 	float lambert = lambert(position);
 	float phong   =   phong(position);
-	return pow(lambert * diff_color + phong * spec_color, vec3(1/γ_screen));
+	return pow(light_color * (lambert * diff_color + phong), vec3(1/γ_screen));
 }
+
 
 glsl vec3 lambert_blinn_phong(vec2 position){
 	float lambert     =     lambert(position);
 	float blinn_phong = blinn_phong(position);
-	return pow(lambert * diff_color + blinn_phong * spec_color, vec3(1/γ_screen));
+	return pow(light_color * (lambert * diff_color + blinn_phong), vec3(1/γ_screen));
 }
+
 
 glsl vec3 lambert_cook_torrance(vec2 position){
 	float lambert       =       lambert(position);
 	vec2  cook_torrance = cook_torrance(position);
 	lambert *= cook_torrance.y;
-	return pow(lambert * diff_color + cook_torrance.x * spec_color, vec3(1/γ_screen));
-}
-
-
-
-glsl vec3 max_max_metal(vec2 position){
-	float max_diffuse = max_diffuse(position);
-	float max_metal   = max_metal(position);
-	return pow(max_diffuse * diff_color + max_metal * spec_color, vec3(1/γ_screen));
+	return pow(light_color * (lambert * diff_color + cook_torrance.x), vec3(1/γ_screen));
 }
 
 
 glsl vec3 oren_nayar_phong(vec2 position){
 	float oren_nayar  =  oren_nayar(position);
 	float phong       =       phong(position);
-	return pow(oren_nayar * diff_color + phong * spec_color, vec3(1/γ_screen));
+	return pow(light_color * (oren_nayar * diff_color + phong), vec3(1/γ_screen));
 }
+
 
 glsl vec3 oren_nayar_blinn_phong(vec2 position){
 	float oren_nayar  =  oren_nayar(position);
 	float blinn_phong = blinn_phong(position);
-	return pow(oren_nayar * diff_color + blinn_phong * spec_color, vec3(1/γ_screen));
+	return pow(light_color * (oren_nayar * diff_color + blinn_phong), vec3(1/γ_screen));
 }
+
 
 glsl vec3 oren_nayar_cook_torrance(vec2 position){
 	float oren_nayar    =    oren_nayar(position);
 	vec2  cook_torrance = cook_torrance(position);
 	oren_nayar *= cook_torrance.y;
-	return pow(oren_nayar * diff_color + cook_torrance.x * spec_color, vec3(1/γ_screen));
+	return pow(light_color * (oren_nayar * diff_color + cook_torrance.x), vec3(1/γ_screen));
 }
 
 

@@ -1,0 +1,228 @@
+//Global illumination
+#include <math_constants>
+#define π PI
+#define τ TAU
+#define φ 1.61803398875
+
+image noise =        file("blunoize_n&b.png")  : hidden();
+image normal_noise = file("blunoize_norm.png") : hidden();
+image albedo =       file ("albedo.png")       : hidden();
+image skysphere =    file("sphere_skybox_alt.png");
+image depth =        file("depth.png")         : hidden();
+image norm =         file("norm.png")          : hidden();
+image spec =         file("spec.png")          : hidden();
+image light =        file("self.png")          : hidden();
+
+param int   nb_steps           = 3    : range (1, 10);
+param float depth_tolerance_gi = .006 : range (0.,.01);
+param float depth_threshold_gi = .04  : range(0.,.1);
+param float γ                  = 2.2  : range(1., 3.);
+param float speed              = .01  : range(0., .1);
+param float accel              = .005 : range (0., .01);
+param bool  advanced_gi        = false;
+param int   steps_gi           = 15   : range (0, 20);
+param float persp_corr         = 0.2;
+
+// light
+param bool  moving_light = true;
+param vec3  light_place = vec3(.5,.65,.5);
+glsl  vec3  light_intensity = vec3(.8,.8,.8);
+param float light_str = .2 : range(0., 1.);
+// Screen space shadow
+param bool  shadows = true;
+param float dither  = 1.;
+
+param int   big_steps = 10 : logrange (1, 100);
+param float depth_tolerance_light = .02 : range (0.,.01);
+param float depth_threshold_light = .1 : range(0.,.3);
+
+
+
+// Noise function :
+// texture(noise, (2*pos*sizeof(diffuse)+floor(sizeof(noise)*vec2((sin(1000*time)),(cos(1000*time)))))/sizeof(noise)).g
+
+glsl float sqdist(vec3 a, vec3 b){
+    a-=b;
+    a*=a;
+    return a.x + a.y + a.z;
+}
+
+glsl vec3 normalize(vec3 to_norm){
+    return to_norm/pow(sqdist(to_norm, vec3(0.)), .5 );
+}
+
+glsl vec3 linearize(vec3 col){
+    return vec3(
+        pow(col.r, γ),
+        pow(col.g, γ),
+        pow(col.b, γ));
+}
+
+
+glsl vec3 delinearize(vec3 col){
+    return vec3(
+        pow(col.r, 1./γ),
+        pow(col.g, 1./γ),
+        pow(col.b, 1./γ));
+}
+
+/*
+glsl float light_orb(vec3(pos)){
+	float strength = 10. ;
+        for(int i=0;i<nb_spheres;i++){
+            col = texture(Colind, vec2((float (i))*0.01,(float(i))*0.02));
+            couleur += col*strengh/sqdist(vec3(pos.xy, 0), )),
+                        sin(time*perlinNoise(vec2(1.2*i+5.5)))));
+        }
+}
+*/
+
+glsl bool raybtween(vec3 a, vec3 b, vec2 pos, float time){
+    vec3 curr_place = a;
+    float curr_depth = 0.;
+    float myrand = dither*texture(noise, (pos*sizeof(albedo)+floor(sizeof(noise)*vec2((sin(1000*time)),(cos(1000*time)))))/sizeof(noise)).g;
+
+    for(int i=0; i<big_steps; i++){
+
+        //eco de mémoire : utilisation de curr_depth pour le mix
+        curr_depth = (i+myrand)/float(big_steps);
+        curr_place = mix(a, b,curr_depth);
+        //fixe au pixel le plus proche
+        curr_place.xy = (floor(curr_place.xy*sizeof(depth)))/sizeof(depth);
+
+        //Dès qu'on sort, c'est bon.
+        if(    curr_place.x < 0. || curr_place.x > 1.
+            || curr_place.y < 0. || curr_place.y > 1.
+            || curr_place.z < 0. || curr_place.z > 1.
+        ){return true;}
+
+        //Collision
+        curr_depth = texture(
+            depth,
+            (curr_place.xy)).g;
+        if ( curr_depth > curr_place.z + depth_tolerance_light
+            && curr_depth < curr_place.z + depth_threshold_light
+        ){return false;}
+
+    }
+
+    return true;
+}
+
+glsl vec4 lighting(vec2 pos, float time){
+    float depth = texture(depth, pos).g;
+    //Juste pour l'animation
+    vec3 new_place;
+    if(moving_light){
+        new_place = light_place +
+        vec3(.1*cos(.5*time),.1*sin(.3*time),.2*sin(.2*time));
+    }else{
+        new_place=light_place;
+    }
+
+    vec3 light_dir = normalize(new_place-vec3(pos,depth));
+    vec3 color =
+        light_str*light_intensity*linearize(texture(albedo, pos).rgb)
+        *dot(light_dir, normalize(texture (norm, pos).xyz-.5))
+        /sqdist(new_place, vec3(pos, depth));
+    if(color.r == 0 && color.g == 0 && color.b == 0){
+        return vec4(vec3(0.),1.);
+    }
+
+    if(shadows){
+        if (raybtween(vec3(pos, depth),new_place, pos, time)){
+            return vec4(delinearize(color),
+            1.);
+        }else{
+            return vec4(vec3(0.),1.);
+        }
+    }else{
+        return vec4(delinearize(color), 1.);
+    }
+}
+
+animation lighted =glsl(lighting, sizeof(albedo));
+
+
+glsl vec3 ray_launch(vec3 pos, vec3 dir, float time){
+
+	vec3 curr_place;
+	vec3 corr_dir = dir + vec3((pos.xy-.5)*persp_corr,0.);
+	float curr_depth ;
+	float i_float=0;
+    for(int i=0; i<steps_gi; i++){
+        i_float = i + texture(noise, (corr_dir.xy*sizeof(albedo)+floor(sizeof(noise) * vec2((sin(1000*time)), (cos(1000*time)) )))/sizeof(noise)).g;
+        curr_place = pos + (i_float*speed + accel*pow(i_float, 2.))*corr_dir;
+
+        //Dès qu'on sort, skysphere
+        if(curr_place.x < 0. || curr_place.x > 1.
+            || curr_place.y < 0. || curr_place.y > 1.
+            || curr_place.z < 0. || curr_place.z > 1.
+        ){return linearize(texture(skysphere, dir.xy+.5).rgb);}
+
+        curr_depth = texture(depth, curr_place.xy).g;
+        //Si on se prend qqchose
+        if (curr_depth > curr_place.z + depth_tolerance_gi){
+            if(curr_depth < curr_place.z + depth_threshold_gi){
+                return linearize(texture(lighted, curr_place.xy).rgb);
+            }else{
+                return vec3(0.);
+            }
+        }
+    }
+    return linearize(texture(skysphere, dir.xy+.5).rgb);
+}
+
+
+glsl vec3 skysphere_illum (vec2 pos, float time){
+    vec3 total_light = vec3(0.);
+    vec3 norm_ray = normalize(texture(norm, pos).xyz-.5);
+    vec3 norm_rand =
+        1.*(texture(normal_noise,
+            (pos*sizeof(albedo)+floor(sizeof(normal_noise)*vec2((sin(1000*time)),(cos(1000*time)))))/sizeof(noise)).xyz-.5);
+
+    vec3 norm_launch;
+    for(int x=0; x<nb_steps; x++){
+        for(int y=0; y<nb_steps; y++){
+            norm_launch = (vec3(x, y,1.)+.5+norm_rand)/nb_steps-.5;
+            norm_launch.z = 1.-pow(norm_launch.x*norm_launch.x+norm_launch.y*norm_launch.y,.5);
+            norm_launch = .5+.5*
+                normalize (
+                norm_ray + norm_launch);
+			if (advanced_gi) {
+	            if(norm_launch.z>0.){
+	                total_light += ray_launch(vec3(pos, (texture(depth, pos).g)), (norm_launch-.5), time);
+	            }else{
+	                return vec3(0.);
+	            }
+			} else {
+				total_light += texture(skysphere, norm_launch.xy).rgb;
+			}
+        }
+    }
+    return delinearize(total_light/float((nb_steps)*(nb_steps)));
+}
+
+animation sky_ill = glsl(skysphere_illum, sizeof(albedo));
+
+glsl vec3 fus (vec2 pos){
+    return delinearize(linearize(texture(albedo, pos).rgb)*linearize(texture(sky_ill, pos).rgb) + linearize(texture(lighted, pos).rgb));
+}
+
+
+
+//Copycut sale
+glsl vec3 final_light(vec2 pos, float time){
+    vec3 total_light = vec3(0.);
+    vec3 norm_ray = normalize(texture(norm, pos).xyz-.5);
+    vec3 norm_rand =
+        1.*(texture(normal_noise,
+            (pos*sizeof(albedo)+floor(sizeof(normal_noise)*vec2((sin(1000*time)),(cos(1000*time)))))/sizeof(noise)).xyz-.5);
+
+	total_light *= linearize(texture(albedo, pos).rgb);
+	total_light += linearize(fus(pos).rgb);
+	total_light += linearize(texture(light, pos).rgb);
+    return delinearize(total_light);
+}
+
+animation second = glsl(final_light, sizeof(albedo));
